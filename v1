@@ -1,0 +1,199 @@
+// UNIVERSIDAD POLITECNICA SALESIANA
+// CARRERA DE INGENIERÍA ELECTRÓNICA
+// PROYECTO IOT DE ACUICULTURA
+
+//LIBRERIAS
+#include &lt;ESP8266WiFi.h&gt;
+#include &lt;ThingSpeak.h&gt;
+#include &lt;SimpleDHT.h&gt; //DHT22
+#include &lt;OneWire.h&gt; //DS18B20
+#include &lt;DallasTemperature.h&gt; //DS18B20
+#include &lt;Wire.h&gt; //Level_Sensor PH_Sensor TDS_Sensor GAS_Sensors
+#include &lt;Adafruit_ADS1015.h&gt; //Level_Sensor PH_Sensor TDS_Sensor
+GAS_Sensors
+//Sensor DS18B20
+#define oneWireBus 2 //GPIO16
+//GAS_Sensors
+#define nBits sizeof(Select_pins)/sizeof(Select_pins[0])
+#define VALVE 10
+const char *ssid = &quot;Acuicultura_UPS&quot;; // replace with your wifi ssid and wpa2 key
+const char *pass = &quot;UPS.2020*_*&quot;;
+unsigned long myChannelNumber = 1244877; // Thingspeak número de canal
+const char * myWriteAPIKey = &quot;1LSP5WCJ41PFC6WB&quot;; // ThingSpeak write API
+Key
+//SENSOR DE TEMPERATURA Y HUMEDAD DHT22
+int pinDHT22 = 16; // Puerto D0 entrada de datos
+SimpleDHT22 dht22; // Modelo de sensor
+OneWire oneWire(oneWireBus);
+DallasTemperature sensors(&amp;oneWire);
+//Flow_Sensor
+#define PIN_FLOW 14
+volatile int flow_frequency; // Measures flow sensor pulses
+unsigned long l_hour; // Calculated litres/hour
+unsigned long currentTime;
+unsigned long cloopTime;
+ICACHE_RAM_ATTR void flow () // Interrupt function
+{
+flow_frequency++;
+}
+
+71
+
+//Level_Sensor PH_Sensor TDS_Sensor GAS_Sensors
+Adafruit_ADS1115 ads(0x49);
+float Voltage = 0.0; //Level_Sensor
+float Voltage1 = 0.0; //PH_Sensor
+float Voltage2 = 0.0; //TDS_Sensor
+int Select_pins[] = { 12, 13}; //Mux ADC
+float Voltages[] = {0.0, 0.0, 0.0, 0.0};
+int16_t Gases_adc_Value[] = {0, 0, 0, 0};
+void ADC_selector(byte n){
+for (byte i=0; i&lt;nBits; i++){
+digitalWrite(Select_pins[i], n &amp; 1);
+n /= 2;
+}
+}
+WiFiClient client;
+void setup(){
+Serial.begin(115200); // Velocidad del puerto serie
+WiFi.mode(WIFI_STA); //Establece el módulo como cliente wifi
+WiFi.disconnect(); //Se desconecta de cualquier WiFi conectado
+delay(100);
+pinMode(pinDHT22,INPUT); //DHT22
+sensors.begin(); //DS18B20
+ads.begin(); // Level_Sensor PDH_Sensor TDS_Sensor GAS_Sensors
+pinMode(VALVE, OUTPUT); //Valvula_Relé
+//Flow_Sensor
+pinMode(PIN_FLOW, INPUT);
+attachInterrupt(digitalPinToInterrupt(PIN_FLOW), flow, FALLING); // Setup
+Interrupt
+sei(); // Enable interrupts
+currentTime = millis();
+cloopTime = currentTime;
+
+//Gases_Sensors
+for (byte i=0; i&lt;nBits; i++){
+pinMode(Select_pins[i], OUTPUT);
+}
+WiFi.begin(ssid, pass); // Inicia WIFI
+Serial.println(&quot;Conectando a &quot;); // Conexión WIFI
+
+72
+
+Serial.println(ssid);
+while (WiFi.status() != WL_CONNECTED){ // wait for WiFi
+delay(500);
+Serial.print(&quot;.&quot;);
+}
+Serial.println(&quot;&quot;);
+Serial.println(&quot;WiFi connectado&quot;);
+ThingSpeak.begin(client); // Inicia WIFI
+}
+void loop(){
+//Hacemos pausa de dos segundos antes de cada nueva medición
+//al sensor le cuesta 200ms leer estos datos
+delay(2000);
+//Leer datos de los sensores
+float t = 0;
+float h = 0;
+if (dht22.read2(pinDHT22, &amp;t, &amp;h, NULL)){
+Serial.println(&quot;Error en la lectura.&quot;);
+return;
+}
+sensors.requestTemperatures();
+float temperatureC = sensors.getTempCByIndex(0);
+float temperatureF = sensors.getTempFByIndex(0);
+int16_t adc0;
+adc0 = ads.readADC_SingleEnded(0);
+Voltage = adc0*(0.1875/1000); //V
+int16_t adc1;
+adc1 = ads.readADC_SingleEnded(1);
+Voltage1 = adc1*(0.1875/1000); //V
+int16_t adc2;
+adc2 = ads.readADC_SingleEnded(2);
+Voltage2 = adc2*(0.1875/1000); //V
+//Flow_Sensor
+currentTime = millis();
+// Every second, calculate and print litres/hour
+if(currentTime &gt;= (cloopTime + 1000))
+{
+cloopTime = currentTime; // Updates cloopTime
+
+73
+
+// Pulse frequency (Hz) = 7.5Q, Q is flow rate in L/min.
+l_hour = (flow_frequency * 60 / 7.5); // (Pulse frequency x 60 min) / 7.5Q =
+flowrate in L/hour
+flow_frequency = 0; // Reset Counter
+Serial.print(l_hour); // Print litres/hour
+Serial.println(&quot; [L/Hour]&quot;);
+}
+
+//GAS_Sensors
+for (byte i=0; i&lt;=3; i++){
+ADC_selector(i);
+Gases_adc_Value[i] = ads.readADC_SingleEnded(3);
+Voltages[i] = Gases_adc_Value[i]*(0.1875/1000); //V
+delay(100);
+}
+for (byte j=0; j&lt;=3; j++){
+Serial.print(&quot;ADC&quot;+(String)j+&quot;: &quot;);
+Serial.print(Gases_adc_Value[j]);
+Serial.print(&quot;\tV&quot;+(String)j+&quot;: &quot;);
+Serial.println(Voltages[j], 7);
+}
+Serial.println(&quot;****&quot;);
+Serial.println();
+delay(1000);
+//Muestra por el puerto serie las medidas obtenidas
+Serial.print(&quot;Humedad relativa: &quot;);
+Serial.print((float)h);
+Serial.print(&quot; %\t&quot;);
+Serial.print(&quot;Temperatura Ambiente: &quot;);
+Serial.print((float)t);
+Serial.println(&quot; *C&quot;);
+Serial.print((float)temperatureC);
+Serial.println(&quot;ºC Temperatura del agua en Centígrados&quot;);
+Serial.print((float)temperatureF);
+Serial.println(&quot;ºF Temperatura del agua en Farenheit&quot;);
+Serial.print(&quot;ADC: &quot;);
+Serial.print(adc0);
+Serial.print(&quot;\tV: &quot;);
+Serial.println(Voltage, 7);
+Serial.println();
+Serial.print(&quot;ADC: &quot;);
+Serial.print(adc1);
+Serial.print(&quot;\tV: &quot;);
+
+74
+
+Serial.println(Voltage1, 7);
+Serial.println();
+Serial.print(&quot;ADC: &quot;);
+Serial.print(adc2);
+Serial.print(&quot;\tV: &quot;);
+Serial.println(Voltage2, 7);
+Serial.println();
+//ThingSpeak
+//Carga los valores a enviar
+ThingSpeak.setField(1, (float)t); //Temperatura Ambiente
+ThingSpeak.setField(2, (float)h); // Humedad relativa
+ThingSpeak.setField(3, (float)temperatureC); //Temperatura del agua
+ThingSpeak.setField(4, (float)Voltage); //Level_Sensor
+ThingSpeak.setField(5, (float)Voltage1); //PH_Sensor
+ThingSpeak.setField(6, (float)Voltage2); //TDS_Sensor
+ThingSpeak.setField(7, (float)Voltages[0]); //Gas1
+ThingSpeak.setField(8, (float)Voltages[1]); //Gas2
+ThingSpeak.setField(9, (float)Voltages[2]); //Gas3
+ThingSpeak.setField(10, (float)Voltages[3]); //Gas4
+ThingSpeak.setField(11, (float)l_hour); //Flow_Sensor
+//Escribe todos los campos a la vez.
+ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+Serial.println(&quot;¡Datos enviados a ThingSpeak!&quot;);
+//Valvula_Relé
+digitalWrite(VALVE, HIGH);
+delay(1000);
+digitalWrite(VALVE, LOW);
+delay(1000);
+delay(10000);
+}
